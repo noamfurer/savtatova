@@ -216,6 +216,14 @@ body.party .bulb{animation-duration:.45s}
 .pill{font-size:max(12px,calc(var(--u)*1.3));padding:.4em 1.1em;border-radius:999px;background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.2);opacity:.75;transition:opacity .2s,background .2s}
 .pill:hover{opacity:1;background:rgba(255,255,255,.16)}
 .pill.goldp{color:var(--gold);box-shadow:inset 0 0 0 1.5px rgba(255,204,51,.5)}
+.musicBtn{width:max(36px,calc(var(--u)*3.4));height:max(36px,calc(var(--u)*3.4));border-radius:50%;display:grid;place-items:center;flex:none;color:#3a1600;
+  background:radial-gradient(circle at 35% 30%,#FFF2B8,var(--gold) 50%,#D99200);box-shadow:0 0 0 2px rgba(255,255,255,.7),0 0 0 4px #c62a6b,0 4px 10px rgba(0,0,0,.45);transition:transform .2s}
+.musicBtn:hover{transform:scale(1.1) rotate(-6deg)}
+.musicBtn svg{width:62%;height:62%;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.musicBtn .fill{fill:currentColor;stroke:none}
+.musicBtn[data-state="1"]{animation:musicPulse .9s ease-in-out infinite}
+.musicBtn[data-state="2"]{background:radial-gradient(circle at 35% 30%,#fff,#d9dcff 60%,#9aa0e8);color:#141a6e;animation:musicPulse 1.8s ease-in-out infinite}
+@keyframes musicPulse{50%{box-shadow:0 0 0 2px rgba(255,255,255,.7),0 0 0 4px #c62a6b,0 0 22px 6px rgba(255,204,51,.75)}}
 .gear{width:max(26px,calc(var(--u)*2.4));height:max(26px,calc(var(--u)*2.4));opacity:.22;display:grid;place-items:center;position:relative;transition:opacity .2s, transform .6s}
 .gear:hover{opacity:.7;transform:rotate(90deg)}
 .gear svg{width:100%;height:100%;fill:none;stroke:#fff;stroke-width:1.8}
@@ -484,6 +492,7 @@ body.party .bulb{animation-duration:.45s}
       </div>
       <div class="legend">מזל טוב סבתא טובה <span class="heart">❤</span> בת 79</div>
       <div class="fside end fbtns">
+        <button class="musicBtn" id="musicBtn" data-state="0" title="מוזיקת קרקס (P)" aria-label="הפעלת מוזיקת קרקס"><svg viewBox="0 0 24 24" id="musicIcon" aria-hidden="true"></svg></button>
         <button class="pill" id="resetBtn">איפוס משחק</button>
         <button class="pill goldp" id="finishBtn">סיום 🏆</button>
       </div>
@@ -815,10 +824,55 @@ Object.keys(SFX).forEach(k => { const f = SFX[k]; SFX[k] = (...args) => { try { 
 function setMuted(m) {
   muted = m; try { localStorage.setItem("tova79:muted", m ? "1" : "0"); } catch {}
   if (master) master.gain.setTargetAtTime(m ? 0 : .9, ac.currentTime, .02);
+  if (music) music.muted = m;
   $("#muteIcon").innerHTML = m
     ? '<path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6M16 9l6 6"/>'
     : '<path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>';
   $("#muteBtn").setAttribute("aria-pressed", m);
+}
+
+/* ---------- circus music: play loud → lower to 20% → stop ---------- */
+const MUSIC_SRC = "circus.mp3", MUSIC_LOUD = 1, MUSIC_SOFT = .2;
+const MUSIC_ICONS = [
+  // circus big-top tent with a flag and a note
+  '<path d="M12 4.2V1.3l2.6.9-2.6.9"/><path d="M3.3 10.6 12 4.2l8.7 6.4z"/><path d="M12 4.2 9.3 10.6M12 4.2l2.7 6.4"/><path d="M3.3 10.6q2.2 2 4.35 0q2.2 2 4.35 0q2.2 2 4.35 0q2.2 2 4.35 0"/><path d="M5 12.2v8.3M19 12.2v8.3M2.8 20.5h18.4"/><path d="M9.8 20.5 12 14.6l2.2 5.9"/><path d="M21.6 5.6V1.2l1.6-.4"/><circle class="fill" cx="20.6" cy="5.8" r="1.25"/>',
+  // volume down
+  '<path class="fill" d="M3 9.5h3.5L11 5.5v13l-4.5-4H3z"/><path d="M14.5 9.5a3.6 3.6 0 0 1 0 5"/><path d="M17.5 12h4.5"/>',
+  // stop
+  '<circle cx="12" cy="12" r="9.5"/><rect class="fill" x="8.2" y="8.2" width="7.6" height="7.6" rx="1.2"/>'
+];
+const MUSIC_LABELS = ["הפעלת מוזיקת קרקס", "החלשת המוזיקה", "עצירת המוזיקה"];
+let music = null, musicState = 0, musicFade = null;
+function musicEl() {
+  if (!music) { music = new Audio(MUSIC_SRC); music.loop = true; music.preload = "auto"; music.muted = muted; }
+  return music;
+}
+function fadeMusic(to, ms, done) {
+  cancelAnimationFrame(musicFade);
+  const m = musicEl(), from = m.volume, t0 = performance.now();
+  const step = now => {
+    const p = Math.min(1, (now - t0) / ms);
+    m.volume = Math.max(0, Math.min(1, from + (to - from) * p));
+    if (p < 1) musicFade = requestAnimationFrame(step); else if (done) done();
+  };
+  musicFade = requestAnimationFrame(step);
+}
+function setMusicState(n) {
+  musicState = n; const b = $("#musicBtn"); b.dataset.state = n;
+  $("#musicIcon").innerHTML = MUSIC_ICONS[n]; b.setAttribute("aria-label", MUSIC_LABELS[n]); b.title = MUSIC_LABELS[n] + " (P)";
+}
+function musicClick() {
+  const m = musicEl();
+  if (musicState === 0) {
+    cancelAnimationFrame(musicFade); m.volume = MUSIC_LOUD; m.currentTime = 0;
+    const p = m.play();
+    if (p && p.catch) p.catch(() => { setMusicState(0); toast("לא הצלחתי לנגן את המוזיקה — ודאו שהקובץ circus.mp3 נמצא ליד האתר"); });
+    setMusicState(1); toast("🎪 מוזיקה!");
+  } else if (musicState === 1) {
+    fadeMusic(MUSIC_SOFT, 900); setMusicState(2); toast("המוזיקה הוחלשה ל-20%");
+  } else {
+    fadeMusic(0, 450, () => { m.pause(); m.currentTime = 0; }); setMusicState(0);
+  }
 }
 
 /* ---------- confetti ---------- */
@@ -1311,6 +1365,7 @@ qEl.addEventListener("pointerdown", () => { if (cur && !cur.closing && qContent.
 grid.addEventListener("click", e => { const t = e.target.closest(".tile"); if (!t || t.classList.contains("done")) return; openQuestion(t).then(() => {}); });
 $("#startBtn").onclick = startGame;
 $("#gearBtn").onclick = openSettings;
+$("#musicBtn").onclick = musicClick; setMusicState(0);
 $("#finishBtn").onclick = showFinal;
 $("#resetBtn").onclick = () => confirmBox("לאפס את המשחק?", "כל הניקוד והמשבצות שנפתחו יימחקו. השאלות נשארות.", "כן, לאפס", resetGame);
 $("#finBack").onclick = leaveFinal;
@@ -1336,6 +1391,7 @@ document.addEventListener("keydown", e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const code = e.code;
   if (code === "KeyF") { e.preventDefault(); toggleFs(); return; }
+  if (code === "KeyP") { e.preventDefault(); musicClick(); return; }
   if (code === "KeyM") { e.preventDefault(); audio(); setMuted(!muted); toast(muted ? "הצליל כבוי" : "הצליל פועל"); return; }
   if (screen === "intro") { if (code === "Space" || code === "Enter") { e.preventDefault(); startGame(); } return; }
   if (screen === "question" && cur) {
